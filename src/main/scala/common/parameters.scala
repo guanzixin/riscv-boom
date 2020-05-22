@@ -77,7 +77,8 @@ case class BoomCoreParams(
    useDebug: Boolean = true,
    useUser: Boolean = true,
    useVM: Boolean = true,
-   useCompressed: Boolean = false
+   useCompressed: Boolean = false,
+   useSCIE: Boolean = false
 ) extends freechips.rocketchip.tile.CoreParams
 {
    val retireWidth: Int = decodeWidth

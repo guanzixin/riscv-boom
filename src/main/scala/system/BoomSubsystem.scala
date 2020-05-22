@@ -76,35 +76,30 @@ class BoomSubsystemModule[+L <: BoomSubsystem](_outer: L) extends BaseSubsystemM
 
 trait CanHaveMisalignedMasterAXI4MemPort { this: BaseSubsystem =>
   val module: CanHaveMisalignedMasterAXI4MemPortModuleImp
-  val nMemoryChannels: Int
-  private val memPortParamsOpt = p(ExtMem)
-  private val portName = "misaligned_axi4"
-  private val device = new MemoryDevice
 
-  require(nMemoryChannels == 0 || memPortParamsOpt.isDefined,
-    s"Cannot have $nMemoryChannels with no memory port!")
+  val memAXI4Node = p(ExtMem).map { case MemoryPortParams(memPortParams, nMemoryChannels) =>
+    val portName = "axi4"
+    val device = new MemoryDevice
 
   val memAXI4Node = AXI4SlaveNode(Seq.tabulate(nMemoryChannels) { channel =>
-    val params = memPortParamsOpt.get
 
     AXI4SlavePortParameters(
       slaves = Seq(AXI4SlaveParameters(
-        address       = AddressSet.misaligned(params.base, params.size),
+        address       = AddressSet.misaligned(memPortParams.base, memPortParams.size),
         resources     = device.reg,
         regionType    = RegionType.UNCACHED, // cacheable
         executable    = true,
         supportsWrite = TransferSizes(1, cacheBlockBytes),
         supportsRead  = TransferSizes(1, cacheBlockBytes),
         interleavedId = Some(0))), // slave does not interleave read responses
-      beatBytes = params.beatBytes)
-  })
+      beatBytes = memPortParams.beatBytes)
+    })
 
-  memPortParamsOpt.foreach { params =>
-    memBuses.map { m =>
-       memAXI4Node := m.toDRAMController(Some(portName)) {
-        (AXI4UserYanker() := AXI4IdIndexer(params.idBits) := TLToAXI4())
-      }
+    memAXI4Node := mbus.toDRAMController(Some(portName)) {
+      AXI4UserYanker() := AXI4IdIndexer(memPortParams.idBits) := TLToAXI4()
     }
+
+    memAXI4Node
   }
 }
 
@@ -113,14 +108,18 @@ trait CanHaveMisalignedMasterAXI4MemPortModuleImp extends LazyModuleImp
 {
   val outer: CanHaveMisalignedMasterAXI4MemPort
 
-  val mem_axi4 = IO(HeterogeneousBag.fromNode(outer.memAXI4Node.in))
-  (mem_axi4 zip outer.memAXI4Node.in).foreach { case (io, (bundle, _)) => io <> bundle }
+  val mem_axi4 = outer.memAXI4Node.map(x => IO(HeterogeneousBag.fromNode(x.in)))
+  (mem_axi4 zip outer.memAXI4Node) foreach { case (io, node) =>
+    (io zip node.in).foreach { case (io, (bundle, _)) => io <> bundle }
+  }
 
   def connectSimAXIMem() {
-    (mem_axi4 zip outer.memAXI4Node.in).foreach { case (io, (_, edge)) =>
-      // setting the max size for simulated memory to be 256MB
-      val mem = LazyModule(new SimAXIMem(edge, size = 0x10000000))
-      Module(mem.module).io.axi4.head <> io
+    (mem_axi4 zip outer.memAXI4Node).foreach { case (io, node) =>
+      (io zip node.in).foreach { case (io, (_, edge)) =>
+        // setting the max size for simulated memory to be 256MB
+        val mem = LazyModule(new SimAXIMem(edge, size = 0x10000000))
+        Module(mem.module).io.axi4.head <> io
+      }
     }
   }
 }

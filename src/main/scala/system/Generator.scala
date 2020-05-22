@@ -104,7 +104,7 @@ object Generator extends GeneratorApp
     TestGeneration.addSuite(new RegressionTestSuite(if (xlen == 64) rv64RegrTestNames else rv32RegrTestNames))
   }
 
-  val longName = names.topModuleProject + "." + names.topModuleClass + "." + names.configs
+  val longName = names.configProject + "." + names.configs
   generateFirrtl
   generateAnno
   generateTestSuiteMakefrags
